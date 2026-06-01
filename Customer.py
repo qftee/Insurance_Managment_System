@@ -26,7 +26,7 @@ class Customers:
                          "Email_Id", "Password", "Address", "Nominee_Name", "Nominee_relationship"]
         # Adding a row with the customer object's attributes to the table
         x.add_row([self.Customer_id, self.Customer_Name, self.Customer_Age, self.Customer_Gender, self.Contact_Number,
-                   self.Email_Id, self.Password, self.Address, self.Nominee_Name, self.Nominee_relationship])
+                    self.Email_Id, "********", self.Address, self.Nominee_Name, self.Nominee_relationship])
         # Setting the table alignment to "l" for left
         x.align = "l"
         # Printing the table
