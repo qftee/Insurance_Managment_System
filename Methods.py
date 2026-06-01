@@ -4,11 +4,18 @@ from prettytable import PrettyTable
 
 import Policy
 from Customer import Customers
-import random
+import uuid
 import re
+import os
+from dotenv import load_dotenv
+import bcrypt
 
-password = ""  # database connection password
-Agent_password = "Insurance@1515"  # common password for the agent login
+load_dotenv()
+
+DB_HOST = os.getenv("DB_HOST", "localhost")
+DB_USER = os.getenv("DB_USER", "root")
+DB_PASSWORD = os.getenv("DB_PASSWORD", "")
+DB_NAME = os.getenv("DB_NAME", "mysql_python")
 
 
 # Login page
@@ -42,7 +49,7 @@ def back_but():
 # Customer registration
 def customer_registration():
     # Generate a unique customer ID
-    customer_id = ''.join(random.sample('0123456789', 7))
+    customer_id = str(uuid.uuid4())[:8]
 
     # Ask for customer name
     print("\nRegistration Page")
@@ -113,13 +120,16 @@ def customer_registration():
         print("Invalid Nominee_relationship! Please enter a valid Nominee_relationship[2-80 characters]")
         nominee_relationship = input("Enter Nominee Relationship: ")
 
+    # Hash the password with bcrypt before storing
+    hashed_password = bcrypt.hashpw(password_user.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+
     # Check if Customer exists
     if check_customer(contact_number, email_id):
         Customers(customer_id, customer_name, customer_age, customer_gender, contact_number, email_id, password_user,
                   address,
                   nominee_name, nominee_relationship)
         insert_customer(customer_id, customer_name, customer_age, customer_gender, contact_number, email_id,
-                        password_user, address, nominee_name, nominee_relationship)
+                        hashed_password, address, nominee_name, nominee_relationship)
     else:
         print("Customer with same Phone number or emailId is already Present\n")
 
@@ -138,9 +148,9 @@ def customer_login():
 # Agent Login Function
 def agent_login():
     print("\nAgent Login Page")
-    input("Agent Id      : ")
+    agent_id = input("Agent Id      : ")
     pass_word = input("Password      : ")
-    if pass_word == Agent_password:
+    if check_agent_login(agent_id, pass_word):
         agent_view()
     else:
         print("Incorrect Password...")
@@ -148,10 +158,34 @@ def agent_login():
     back_but()
 
 
+# Function to check agent login credentials against the database
+def check_agent_login(agent_id, pass_word):
+    connection = create_db_connection(DB_HOST, DB_USER, DB_PASSWORD, DB_NAME)
+    sql = """select * from agent_info where Agent_id = %s"""
+    val = (agent_id,)
+    cursor = connection.cursor()
+
+    try:
+        cursor.execute(sql, val)
+        result = cursor.fetchall()
+        if not result:
+            return False
+        # Check the password using bcrypt
+        if bcrypt.checkpw(pass_word.encode('utf-8'), result[0][2].encode('utf-8')):
+            return True
+        else:
+            return False
+    except Error as err:
+        print(f"Error: '{err}")
+        return False
+    finally:
+        connection.close()
+
+
 # Function to view customer and policy information for agents
 def agent_view():
     # Establish a connection to the database
-    connection = create_db_connection("localhost", "root", password, "mysql_python")
+    connection = create_db_connection(DB_HOST, DB_USER, DB_PASSWORD, DB_NAME)
     # SQL query to join customer and policy information
     sql = """select c.Customer_id, c.Customer_Name, c.Contact_Number, c.Email_Id, c.Address, p.Policy_id, p.Policy_Name, p.Sum_Assured, p.Premium, p.Term from customer_info as c inner join policy_info as p on c.Customer_id = p.Customer_id"""
     # Creating a cursor to execute the query
@@ -294,13 +328,13 @@ def create_server_connection(host_name, user_name, user_password):
 # Main function to bring everything together
 def server():
     # Connecting to database server
-    connection = create_server_connection("localhost", "root", password)
+    connection = create_server_connection(DB_HOST, DB_USER, DB_PASSWORD)
     # SQL query to create database
     create_database_query = "Create database mysql_python"
     # Calling function to create database
     create_database(connection, create_database_query)
     # Connecting to database
-    connection = create_db_connection("localhost", "root", password, "mysql_python")
+    connection = create_db_connection(DB_HOST, DB_USER, DB_PASSWORD, DB_NAME)
     # Calling function to create tables
     create_table(connection)
 
@@ -309,7 +343,7 @@ def server():
 def create_table(connection):
     # SQL query to create customer_info table with specified columns and their datatypes
     query = """CREATE TABLE customer_info (
-      Customer_id INT PRIMARY KEY,
+      Customer_id VARCHAR(36) PRIMARY KEY,
       Customer_Name VARCHAR(255) NOT NULL,
       Customer_Age INT NOT NULL,
       Customer_Gender ENUM('Male', 'Female', 'Other') NOT NULL,
@@ -326,8 +360,8 @@ def create_table(connection):
     connection.commit()
     # SQL query to create policy_info table with specified columns and their datatypes
     query = """CREATE TABLE policy_info (
-  Customer_id INT,
-  Policy_id INT,
+  Customer_id VARCHAR(36),
+  Policy_id VARCHAR(36),
   Policy_Name VARCHAR(255) NOT NULL,
   Sum_Assured INT NOT NULL,
   Premium VARCHAR(20) NOT NULL,
@@ -339,12 +373,31 @@ def create_table(connection):
     execute_query(connection, query)
     # Committing the changes made to the database
     connection.commit()
+    # SQL query to create agent_info table with specified columns and their datatypes
+    query = """CREATE TABLE agent_info (
+  Agent_id VARCHAR(36) PRIMARY KEY,
+  Agent_Name VARCHAR(255) NOT NULL,
+  Password VARCHAR(255) NOT NULL
+);"""
+    # Function call to execute the query
+    execute_query(connection, query)
+    # Committing the changes made to the database
+    connection.commit()
+    # Insert default agent with bcrypt-hashed password
+    default_agent_password = bcrypt.hashpw('Agent@2026'.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+    insert_query = """INSERT INTO agent_info (Agent_id, Agent_Name, Password) VALUES (%s, %s, %s)"""
+    cursor = connection.cursor()
+    try:
+        cursor.execute(insert_query, ('AGT001', 'Admin Agent', default_agent_password))
+        connection.commit()
+    except Error as err:
+        print(f"Error: '{err}")
 
 
 # Function to execute a select statement on customer_info table
 def read_query():
     # Creating a database connection
-    connection = create_db_connection("localhost", "root", password, "mysql_python")
+    connection = create_db_connection(DB_HOST, DB_USER, DB_PASSWORD, DB_NAME)
     # SQL query to select all data from customer_info table
     query = """select * from customer_info"""
     # Creating a cursor
@@ -360,7 +413,7 @@ def read_query():
 
 # Check for duplicate contact number and email
 def check_customer(contact_number, email_id):
-    connection = create_db_connection("localhost", "root", password, "mysql_python")
+    connection = create_db_connection(DB_HOST, DB_USER, DB_PASSWORD, DB_NAME)
     # SQL query to check if the contact number or email already exists in the customer_info table
     sql = """select * from customer_info where Contact_Number = %s or Email_Id = %s"""
     val = (contact_number, email_id)
@@ -382,7 +435,7 @@ def check_customer(contact_number, email_id):
 # Inserting values into Customer table
 def insert_customer(customer_id, customer_name, customer_age, customer_gender, contact_number, email_id, password_user,
                     address, nominee_name, nominee_relationship):
-    connection = create_db_connection("localhost", "root", password, "mysql_python")
+    connection = create_db_connection(DB_HOST, DB_USER, DB_PASSWORD, DB_NAME)
     # SQL query to insert the customer details into the customer_info table
     sql = ("INSERT INTO customer_info (Customer_id, Customer_Name, Customer_Age, Customer_Gender, Contact_Number, \n"
            "    Email_Id, Password, Address, Nominee_Name, Nominee_relationship) VALUES (%s, %s, %s, %s, %s, %s, %s, %s,"
@@ -403,7 +456,7 @@ def insert_customer(customer_id, customer_name, customer_age, customer_gender, c
 # Login Validation
 def login_check(customer_Id, pass_word):
     # Connect to the database with the provided parameters
-    connection = create_db_connection("localhost", "root", password, "mysql_python")
+    connection = create_db_connection(DB_HOST, DB_USER, DB_PASSWORD, DB_NAME)
     # SQL query to retrieve customer information from the database using the provided customer ID
     sql = """select * from customer_info where Customer_id = %s"""
     val = (customer_Id,)
@@ -418,7 +471,7 @@ def login_check(customer_Id, pass_word):
             back_but()
         else:
             # If the password matches the one in the database, call the policy_page function with the customer ID as a parameter
-            if result[0][6] == pass_word:
+            if bcrypt.checkpw(pass_word.encode('utf-8'), result[0][6].encode('utf-8')):
                 Policy.policy_page(customer_Id)
             else:
                 # If the password doesn't match, print the error message and call the back_but function
@@ -431,7 +484,7 @@ def login_check(customer_Id, pass_word):
 # Inserting values into policy table
 def insert_policy_info(Customer_id, Policy_id, Policy_Name, Sum_Assured, Premium, Term):
     # Connect to the database with the provided parameters
-    connection = create_db_connection("localhost", "root", password, "mysql_python")
+    connection = create_db_connection(DB_HOST, DB_USER, DB_PASSWORD, DB_NAME)
     # SQL query to insert policy information into the policy_info table
     sql = "INSERT INTO policy_info (Customer_id, Policy_id , Policy_Name, Sum_Assured, Premium, Term) VALUES (%s, %s, %s, %s, %s, %s)"
     val = (Customer_id, Policy_id, Policy_Name, Sum_Assured, Premium, Term)
@@ -448,7 +501,7 @@ def insert_policy_info(Customer_id, Policy_id, Policy_Name, Sum_Assured, Premium
 # Getting value for Customer table from Customer and policy table
 def display_customer(customer_id):
     # Connect to the database
-    connection = create_db_connection("localhost", "root", password, "mysql_python")
+    connection = create_db_connection(DB_HOST, DB_USER, DB_PASSWORD, DB_NAME)
 
     # SQL query to retrieve data from customer_info and policy_info tables based on the customer_id
     sql = """select * from customer_info inner join policy_info on customer_info.Customer_id = policy_info.Customer_id where customer_info.Customer_id = %s"""
@@ -478,7 +531,7 @@ def table(value):
     for val in value:
         # Add a row to the table for each data entry
         x.add_row(
-            [val[0], val[1], val[2], val[3], val[4], val[5], val[6], val[7], val[8], val[9], val[10], val[12], val[13],
+            [val[0], val[1], val[2], val[3], val[4], val[5], "********", val[7], val[8], val[9], val[10], val[12], val[13],
              val[14], val[15]])
     x.align = "l"
     print(x)
