@@ -1,4 +1,4 @@
-import random
+import uuid
 import re
 import Methods
 
@@ -94,7 +94,7 @@ def select_policy(Root_insurances):
     if input(
             f"\nSelected Policy\n{Root_insurances[option]}\n\nTo Confirm Press y | Press Enter key to go back : ") == 'y':
         # generate a random policy id
-        Policy_id = ''.join(random.sample('0123456789', 7))
+        Policy_id = str(uuid.uuid4())[:8]
         # insert the policy info into the database
         Methods.insert_policy_info(cust_Id, Policy_id, Root_insurances[option]["policy_name"],
                                    Root_insurances[option]["sum_assured"], Root_insurances[option]["premium"],
